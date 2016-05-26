@@ -1,13 +1,13 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace Provisioning.CLI.Console.ClParser
+﻿namespace Provisioning.CLI.Console.ClParser
 {
+    /// <summary>
+    /// The supported login methods
+    /// </summary>
     public enum LoginMethod
     {
-        SPO
+        /// <summary>
+        /// SharePoint online login
+        /// </summary>
+        Spo
     }
 }

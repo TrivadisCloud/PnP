@@ -1,34 +1,50 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace Provisioning.CLI.Console.ClParser
 {
+    /// <summary>
+    /// The parser parses the command line arguments and validates them
+    /// </summary>
     public class Parser
     {
+        /// <summary>
+        /// Member to the provided arguments
+        /// </summary>
         string[] args = null;
 
+        /// <summary>
+        /// Constructor to pass in the arguments
+        /// </summary>
+        /// <param name="args">Given command line arguments</param>
         public Parser(string[] args)
         {
             this.args = args;
             ClIsOk = false;
             ClParameters = new Dictionary<Params, object>();
             ClOptions = new List<Options>();
-            RequiredOptions = new List<Options>();
-            RequiredParameters = new List<Params>();
-            RequiredParameters.Add(Params.Action);
             Parse();
         }
 
+        /// <summary>
+        /// After parsing the command line this property specifies, if the parsing was successfull
+        /// </summary>
         public bool ClIsOk { get; set; }
-        public Dictionary<Params, object> ClParameters { get; set; }
-        public List<Options> ClOptions { get; set; }
-        private List<Params> RequiredParameters { get; set; }
-        private List<Options> RequiredOptions { get; set; }
 
+        /// <summary>
+        /// Property holding all found parameters
+        /// </summary>
+        public Dictionary<Params, object> ClParameters { get; set; }
+
+        /// <summary>
+        /// Property holding all found options
+        /// </summary>
+        public List<Options> ClOptions { get; set; }
+
+        /// <summary>
+        /// Prints out the usage of this tool
+        /// </summary>
         public void Usage()
         {
             string usage = "Usage:\n";
@@ -55,6 +71,9 @@ namespace Provisioning.CLI.Console.ClParser
             System.Console.Error.WriteLine(usage);
         }
 
+        /// <summary>
+        /// Parses the command line
+        /// </summary>
         private void Parse()
         {
             if (args.Length == 0) return;
@@ -71,7 +90,7 @@ namespace Provisioning.CLI.Console.ClParser
                         param = param.Substring(0, param.IndexOf("="));
                     }
                     param = Thread.CurrentThread.CurrentCulture.TextInfo.ToTitleCase(param.ToLower());
-                    Options option = Options.Debug;
+                    Options option = Options.NoInteraction;
                     Params parameter = Params.Action;
                     if (Enum.TryParse<Options>(param, out option))
                     {
@@ -101,7 +120,8 @@ namespace Provisioning.CLI.Console.ClParser
                         {
                             case Params.Action:
 
-                                Actions action = Actions.ExtractTemplate;
+                                Actions action = Actions.Extracttemplate;
+                                value = Thread.CurrentThread.CurrentCulture.TextInfo.ToTitleCase(value.ToLower());
                                 if (Enum.TryParse<Actions>(value, out action))
                                 {
                                     ClParameters[parameter] = action;
@@ -116,7 +136,8 @@ namespace Provisioning.CLI.Console.ClParser
                                 break;
                             case Params.Loginmethod:
 
-                                LoginMethod loginMethod = LoginMethod.SPO;
+                                LoginMethod loginMethod = LoginMethod.Spo;
+                                value = Thread.CurrentThread.CurrentCulture.TextInfo.ToTitleCase(value.ToLower());
                                 if (Enum.TryParse<LoginMethod>(value, out loginMethod))
                                 {
                                     ClParameters[parameter] = loginMethod;
@@ -155,42 +176,94 @@ namespace Provisioning.CLI.Console.ClParser
             {
                 switch ((Actions)ClParameters[Params.Action])
                 {
-                    case Actions.ExtractTemplate:
-                        if (!ClParameters.ContainsKey(Params.Outfile))
+                    case Actions.Extracttemplate:
+                        foundError = CheckOutFile(foundError);
+                        foundError = CheckUrl(foundError);
+                        foundError = CheckLoginMethod(foundError);
+                        break;
+                    case Actions.Applytemplate:
+                        foundError = CheckInFile(foundError);
+                        foundError = CheckLoginMethod(foundError);
+                        break;
+                }
+            }
+            if (!ClParameters.ContainsKey(Params.Loginmethod))
+            {
+                switch ((LoginMethod)ClParameters[Params.Loginmethod])
+                {
+                    case LoginMethod.Spo:
+                        if (!ClParameters.ContainsKey(Params.User))
                         {
                             foundError = true;
-                            System.Console.Error.WriteLine("Parameter outFile is required!");
-                        }
-                        if (!ClParameters.ContainsKey(Params.Url))
-                        {
-                            foundError = true;
-                            System.Console.Error.WriteLine("Parameter url is required!");
-                        }
-                        if (!ClParameters.ContainsKey(Params.Loginmethod))
-                        {
-                            foundError = true;
-                            System.Console.Error.WriteLine("Parameter LoginMethod is required!");
-                        }
-                        else
-                        {
-                            switch ((LoginMethod)ClParameters[Params.Loginmethod])
-                            {
-                                case LoginMethod.SPO:
-                                    if (!ClParameters.ContainsKey(Params.User))
-                                    {
-                                        foundError = true;
-                                        System.Console.Error.WriteLine("Parameter user is required!");
-                                    }
-                                    break;
-                            }
+                            System.Console.Error.WriteLine("Parameter user is required for LoginMethod SPO!");
                         }
                         break;
                 }
             }
 
+            //Done
             if (foundError) return;
             ClIsOk = true;
         }
 
+        /// <summary>
+        /// Checks if the OutFile argument is specified
+        /// </summary>
+        /// <param name="foundError">The actual state</param>
+        /// <returns>foundError: set to true, if there was an error</returns>
+        private bool CheckOutFile(bool foundError)
+        {
+            if (!ClParameters.ContainsKey(Params.Outfile))
+            {
+                foundError = true;
+                System.Console.Error.WriteLine("Parameter outFile is required!");
+            }
+            return foundError;
+        }
+
+        /// <summary>
+        /// Checks if the InFile argument is specified
+        /// </summary>
+        /// <param name="foundError">The actual state</param>
+        /// <returns>foundError: set to true, if there was an error</returns>
+        private bool CheckInFile(bool foundError)
+        {
+            if (!ClParameters.ContainsKey(Params.Infile))
+            {
+                foundError = true;
+                System.Console.Error.WriteLine("Parameter inFile is required!");
+            }
+            return foundError;
+        }
+
+        /// <summary>
+        /// Checks if the Url argument is specified
+        /// </summary>
+        /// <param name="foundError">The actual state</param>
+        /// <returns>foundError: set to true, if there was an error</returns>
+        private bool CheckUrl(bool foundError)
+        {
+            if (!ClParameters.ContainsKey(Params.Url))
+            {
+                foundError = true;
+                System.Console.Error.WriteLine("Parameter url is required!");
+            }
+            return foundError;
+        }
+
+        /// <summary>
+        /// Checks if the LoginMethod argument is specified
+        /// </summary>
+        /// <param name="foundError">The actual state</param>
+        /// <returns>foundError: set to true, if there was an error</returns>
+        private bool CheckLoginMethod(bool foundError)
+        {
+            if (!ClParameters.ContainsKey(Params.Loginmethod))
+            {
+                foundError = true;
+                System.Console.Error.WriteLine("Parameter LoginMethod is required!");
+            }
+            return foundError;
+        }
     }
 }

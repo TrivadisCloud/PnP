@@ -1,13 +1,18 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace Provisioning.CLI.Console.ClParser
+﻿namespace Provisioning.CLI.Console.ClParser
 {
+    /// <summary>
+    /// The actions this tool can handle
+    /// </summary>
     public enum Actions
     {
-        ExtractTemplate
+        /// <summary>
+        /// Extracts a template
+        /// </summary>
+        Extracttemplate,
+
+        /// <summary>
+        /// Applies a template
+        /// </summary>
+        Applytemplate
     }
 }
