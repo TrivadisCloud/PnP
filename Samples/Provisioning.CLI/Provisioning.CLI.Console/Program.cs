@@ -10,6 +10,9 @@ using OfficeDevPnP.Core.Framework.Provisioning.Model;
 using OfficeDevPnP.Core.Framework.Provisioning.ObjectHandlers;
 using OfficeDevPnP.Core.Framework.Provisioning.Providers.Xml;
 using Provisioning.CLI.Console.ClParser;
+using System.Threading;
+using System.Collections.Generic;
+using System.Net;
 
 namespace Provisioning.CLI.Console
 {
@@ -29,7 +32,10 @@ namespace Provisioning.CLI.Console
         /// </summary>
         /// <param name="args">The command line arguments</param>
         /// <example>Extract template: -action Extracttemplate -Url https://brk365tests.sharepoint.com/sites/nav -LoginMethod SPO -User=brk365tests@brk365tests.onmicrosoft.com -OUTFILE "C:\Users\brk\Desktop\template.xml" -password Enjoy123.</example>
-        /// <example>Apply template: -action Applytemplate -Url https://brk365tests.sharepoint.com/sites/nav -LoginMethod SPO -User=brk365tests@brk365tests.onmicrosoft.com -INFILE "C:\Users\brk\Desktop\template.xml" -password Enjoy123.</example>
+        /// <example>Extract template for an entire structure: -action Extracttemplate -EntireStructure -Url https://brk365tests.sharepoint.com/sites/nav -LoginMethod SPO -User=brk365tests@brk365tests.onmicrosoft.com -OUTFILE "C:\Users\brk\Desktop\Structure" -password Enjoy123.</example>
+        /// 
+        /// 
+        /// <example>Apply template: -action Applytemplate -Url https://konidev.sharepoint.com/sites/nav -LoginMethod SPO -User=admin@konidev.onmicrosoft.com -INFILE "C:\Data\@Trivadis\Lösungen\Kacheln\srcSP\template.xml" -password Enjoy123.</example>
         /// <example>Apply mutiple templates with absolute paths in file: -action Applytemplate -LoginMethod SPO -User=brk365tests@brk365tests.onmicrosoft.com -INFILE "C:\Users\brk\Desktop\sitesAbsPath.xml" -password Enjoy123.</example>
         /// <example>Apply mutiple templates with relative paths in file: -action Applytemplate -LoginMethod SPO -User=brk365tests@brk365tests.onmicrosoft.com -INFILE "C:\Users\brk\Desktop\sitesRelPath.xml" -Url https://brk365tests.sharepoint.com/sites/nav -password Enjoy123.</example>
         /// <returns>0 in case of success or the error number</returns>
@@ -58,45 +64,50 @@ namespace Provisioning.CLI.Console
                         System.Console.Out.WriteLine("Extracting template");
                         System.Console.Out.WriteLine("-------------------");
 
-                        Uri fromuri = new Uri((string)parser.ClParameters[Params.Url]);
-                        System.Console.Out.WriteLine("From url: " + fromuri.ToString());
-                        using (ClientContext context = new ClientContext(fromuri))
+                        //Exporting template
+                        FileInfo outFile = null;
+                        string outFilePath = (string)parser.ClParameters[Params.Outfile];
+                        if (System.IO.File.Exists(outFilePath))
                         {
-                            //Login to web
-                            LoginToWeb(parser, context);
+                            if (System.IO.File.Exists(outFilePath + ".bak"))
+                                System.IO.File.Delete(outFilePath + ".bak");
+                            System.IO.File.Move(outFilePath, outFilePath + ".bak");
+                            outFile = new FileInfo(outFilePath);
+                        }
+                        else if (System.IO.Directory.Exists(outFilePath))
+                        {
+                            if (parser.ClOptions.Contains(Options.Entirestructure))
+                                outFilePath += Path.DirectorySeparatorChar + "site.xml";
+                            else
+                                outFilePath += Path.DirectorySeparatorChar + "template.xml";
+                            outFile = new FileInfo(outFilePath);
+                        }
+                        else
+                        {
+                            outFile = new FileInfo(outFilePath);
+                        }
+                        System.Console.Out.WriteLine("To file: " + outFile.FullName);
 
-                            //Setting user language to web install language
-                            SetUserLanguageToWebLanguage(context);
-
-                            //Exporting template
-                            FileInfo outFile = new FileInfo((string)parser.ClParameters[Params.Outfile]);
-                            System.Console.Out.WriteLine("To file: " + outFile.FullName);
-                            if (outFile.Exists)
+                        Uri fromuri = new Uri(((string)parser.ClParameters[Params.Url]).TrimEnd("/".ToCharArray()));
+                        if (parser.ClOptions.Contains(Options.Entirestructure))
+                        {
+                            using (StreamWriter txtw = new StreamWriter(outFile.OpenWrite()))
                             {
-                                if (System.IO.File.Exists(outFile.FullName + ".bak"))
-                                    System.IO.File.Delete(outFile.FullName + ".bak");
-                                System.IO.File.Move(outFile.FullName, outFile.FullName + ".bak");
+                                txtw.WriteLine("<?xml version=\"1.0\" encoding=\"utf - 8\"?>");
+                                txtw.WriteLine("<sites>");
+                                ExtractTemplateStructure(outFile, txtw, fromuri, parser);
+                                txtw.WriteLine("</sites>");
+                                txtw.Close();
                             }
-
-                            ProvisioningTemplateCreationInformation cri = new ProvisioningTemplateCreationInformation(context.Web);
-                            cri.FileConnector = new FileSystemConnector(outFile.Directory.FullName, "");
-                            cri.IncludeAllTermGroups = true;
-                            cri.IncludeNativePublishingFiles = true;
-                            cri.IncludeSearchConfiguration = true;
-                            cri.IncludeSiteCollectionTermGroup = true;
-                            cri.IncludeSiteGroups = true;
-                            cri.PersistBrandingFiles = true;
-                            cri.PersistPublishingFiles = true;
-                            cri.PersistMultiLanguageResources = true;
-                            cri.ProgressDelegate = delegate (String message, Int32 progress, Int32 total)
+                        }
+                        else
+                        {
+                            System.Console.Out.WriteLine("From url: " + fromuri.ToString());
+                            using (ClientContext context = new ClientContext(fromuri))
                             {
-                                System.Console.WriteLine("  {0:00}/{1:00} - {2}", progress, total, message);
-                            };
-                            ProvisioningTemplate template = context.Web.GetProvisioningTemplate(cri);
-
-                            XMLTemplateProvider provider =
-                                        new XMLFileSystemTemplateProvider(outFile.Directory.FullName, "");
-                            provider.SaveAs(template, outFile.Name);
+                                LoginToWeb(parser, context);
+                                ExtractTemplate(context, outFile);
+                            }
                         }
 
                         System.Console.Out.WriteLine("Done");
@@ -198,6 +209,77 @@ namespace Provisioning.CLI.Console
         }
 
         /// <summary>
+        /// Extracts an entire site structure
+        /// </summary>
+        /// <param name="outFile">The sites.xml file</param>
+        /// <param name="outFileWriter">The StreamWriter to write to sites.xml file</param>
+        /// <param name="fromuri">The actual uri to be extracted</param>
+        /// <param name="parser">The command line parser</param>
+        /// <param name="parents">A string containing all parents</param>
+        private static void ExtractTemplateStructure(FileInfo outFile, StreamWriter outFileWriter, Uri fromuri, Parser parser)
+        {
+            System.Console.Out.WriteLine("From url: " + fromuri.ToString());
+            List<Uri> subUris = new List<Uri>();
+            using (ClientContext context = new ClientContext(fromuri))
+            {
+                LoginToWeb(parser, context);
+                Web oWebsite = context.Web;
+                context.Load(oWebsite, website => website.Webs, website => website.ServerRelativeUrl);
+                context.ExecuteQuery();
+
+                string dirPath = System.Web.HttpUtility.UrlDecode(oWebsite.ServerRelativeUrl).Replace("/", "_");
+                System.IO.Directory.CreateDirectory(outFile.Directory.FullName + Path.DirectorySeparatorChar + dirPath);
+                FileInfo outPutFile = new FileInfo(outFile.Directory.FullName + 
+                    Path.DirectorySeparatorChar + dirPath + Path.DirectorySeparatorChar + "template.xml");
+                outFileWriter.WriteLine("  <site url=\"" + oWebsite.ServerRelativeUrl + "\" file=\""+ dirPath + Path.DirectorySeparatorChar + "template.xml\" />");
+                outFileWriter.Flush();
+                ExtractTemplate(context, outPutFile);
+                foreach (Web subWeb in oWebsite.Webs)
+                {
+                    Uri subUri = new Uri(fromuri.AbsoluteUri.Substring(0, fromuri.AbsoluteUri.Length - fromuri.AbsolutePath.Length) + subWeb.ServerRelativeUrl);
+                    subUris.Add(subUri);
+                }
+            }
+            System.Console.Out.WriteLine("");
+
+            foreach (Uri subUri in subUris)
+            {
+                ExtractTemplateStructure(outFile, outFileWriter, subUri, parser);
+            }
+        }
+
+        private static void ExtractTemplate(ClientContext context, FileInfo outFile)
+        {
+
+            //Setting user language to web install language
+            SetUserLanguageToWebLanguage(context);
+
+            ProvisioningTemplateCreationInformation cri = new ProvisioningTemplateCreationInformation(context.Web);
+            cri.FileConnector = new FileSystemConnector(outFile.Directory.FullName, "");
+
+            if (!context.Web.IsSubSite())
+            {
+                cri.IncludeSiteCollectionTermGroup = true;
+            }
+            cri.IncludeNativePublishingFiles = true;
+            cri.IncludeSearchConfiguration = true; //TODO is this valid per web?
+            cri.IncludeSiteGroups = true;
+            cri.IncludeAllTermGroups = true;
+            cri.PersistBrandingFiles = true;
+            cri.PersistPublishingFiles = true;
+            cri.PersistMultiLanguageResources = true;
+            cri.ProgressDelegate = delegate (String message, Int32 progress, Int32 total)
+            {
+                System.Console.WriteLine("  {0:00}/{1:00} - {2}", progress, total, message);
+            };
+            ProvisioningTemplate template = context.Web.GetProvisioningTemplate(cri);
+
+            XMLTemplateProvider provider =
+                        new XMLFileSystemTemplateProvider(outFile.Directory.FullName, "");
+            provider.SaveAs(template, outFile.Name);
+        }
+
+        /// <summary>
         /// Method to apply a template to a web
         /// </summary>
         /// <param name="parser">The command line parser</param>
@@ -246,10 +328,28 @@ namespace Provisioning.CLI.Console
                 case LoginMethod.Spo:
 
                     if (securePwd == null) securePwd = GetSecurePassword(parser);
+                    context.AuthenticationMode = ClientAuthenticationMode.Default;
                     context.Credentials =
                         new SharePointOnlineCredentials(
                             (string)parser.ClParameters[Params.User],
                             securePwd);
+
+                    break;
+                case LoginMethod.Onprem:
+
+                    if (parser.ClParameters.ContainsKey(Params.User))
+                    {
+                        if (securePwd == null) securePwd = GetSecurePassword(parser);
+                        context.Credentials =
+                            new NetworkCredential(
+                                (string)parser.ClParameters[Params.User],
+                                securePwd);
+                    }
+                    else
+                    {
+                        context.Credentials = CredentialCache.DefaultNetworkCredentials;
+                    }
+
                     break;
             }
         }
@@ -267,6 +367,8 @@ namespace Provisioning.CLI.Console
             PeopleManager peopleManager = new PeopleManager(context);
             int lcid = template.RegionalSettings.LocaleId;
             CultureInfo siteCulture = CultureInfo.GetCultureInfo(lcid);
+            Thread.CurrentThread.CurrentCulture = siteCulture;
+            Thread.CurrentThread.CurrentUICulture = siteCulture;
             var muiLanguages = siteCulture.Name;
             System.Console.Out.WriteLine("Using language: " + muiLanguages);
             var customRegionalSettings = "False";
@@ -287,12 +389,15 @@ namespace Provisioning.CLI.Console
         {
             Microsoft.SharePoint.Client.User user = context.Web.CurrentUser;
             context.Load(user);
-            context.Web.Context.Load(context.Web.RegionalSettings);
-            context.Web.Context.Load(context.Web.RegionalSettings.TimeZone, tz => tz.Id);
+            context.Load(context.Site.RootWeb);
+            context.Load(context.Web.RegionalSettings);
+            context.Load(context.Web.RegionalSettings.TimeZone, tz => tz.Id);
             context.ExecuteQuery();
             PeopleManager peopleManager = new PeopleManager(context);
-            int lcid = (int)context.Web.RegionalSettings.LocaleId;
+            int lcid = (int)context.Site.RootWeb.Language;
             CultureInfo siteCulture = CultureInfo.GetCultureInfo(lcid);
+            Thread.CurrentThread.CurrentCulture = siteCulture;
+            Thread.CurrentThread.CurrentUICulture = siteCulture;
             var muiLanguages = siteCulture.Name;
             System.Console.Out.WriteLine("Using language: " + muiLanguages);
             var customRegionalSettings = "False";
@@ -326,6 +431,7 @@ namespace Provisioning.CLI.Console
                         ConsoleKeyInfo i = System.Console.ReadKey(true);
                         if (i.Key == ConsoleKey.Enter)
                         {
+                            System.Console.Out.WriteLine("");
                             break;
                         }
                         else if (i.Key == ConsoleKey.Backspace)
@@ -369,7 +475,7 @@ namespace Provisioning.CLI.Console
                     secPwd.AppendChar(chr);
             }
 
-            return securePwd;
+            return secPwd;
         }
 
     }

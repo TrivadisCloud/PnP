@@ -8,9 +8,9 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyTitle("Provisioning.CLI.Console")]
 [assembly: AssemblyDescription("")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("Trivadis AG")]
+[assembly: AssemblyCompany("")]
 [assembly: AssemblyProduct("Provisioning.CLI.Console")]
-[assembly: AssemblyCopyright("Copyright © Trivadis AG 2016")]
+[assembly: AssemblyCopyright("Copyright © 2016")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
 

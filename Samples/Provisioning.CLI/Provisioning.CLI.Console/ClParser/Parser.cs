@@ -60,14 +60,18 @@ namespace Provisioning.CLI.Console.ClParser
                 usage += "-" + opt + " ";
             }
             usage += "\n";
-            usage += "     Action: possible values are\n";
-            string[] acts = Enum.GetNames(typeof(Actions));
-            foreach (string act in acts)
-                usage += "               -  " + act + "\n";
-            usage += "     LoginMethod: possible values are\n";
-            string[] logs = Enum.GetNames(typeof(Actions));
-            foreach (string log in logs)
-                usage += "               -  " + log + "\n";
+            usage += "     " + ParamsComments.Comment + "\n";
+            foreach (Params par in ParamsComments.ValueComments.Keys)
+                usage += "               -  " + par.ToString() + ": " + ParamsComments.ValueComments[par] + "\n";
+            usage += "     " + OptionsComments.Comment + "\n";
+            foreach (Options opt in OptionsComments.ValueComments.Keys)
+                usage += "               -  " + opt.ToString() + ": " + OptionsComments.ValueComments[opt] + "\n";
+            usage += "     Action: " + ActionsComments.Comment + "\n";
+            foreach (Actions act in ActionsComments.ValueComments.Keys)
+                usage += "               -  " + act.ToString() + ": " + ActionsComments.ValueComments[act] + "\n";
+            usage += "     LoginMethod: " + LoginMethodComments.Comment + "\n";
+            foreach (LoginMethod log in LoginMethodComments.ValueComments.Keys)
+                usage += "               -  " + log.ToString() + ": " + LoginMethodComments.ValueComments[log] + "\n";
             System.Console.Error.WriteLine(usage);
         }
 
