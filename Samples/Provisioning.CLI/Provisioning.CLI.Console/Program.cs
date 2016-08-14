@@ -5,6 +5,7 @@ using System.Security;
 using System.Xml;
 using Microsoft.SharePoint.Client;
 using Microsoft.SharePoint.Client.UserProfiles;
+using Microsoft.Online.SharePoint.TenantAdministration;
 using OfficeDevPnP.Core.Framework.Provisioning.Connectors;
 using OfficeDevPnP.Core.Framework.Provisioning.Model;
 using OfficeDevPnP.Core.Framework.Provisioning.ObjectHandlers;
@@ -13,6 +14,8 @@ using Provisioning.CLI.Console.ClParser;
 using System.Threading;
 using System.Collections.Generic;
 using System.Net;
+using Microsoft.Online.SharePoint.TenantManagement;
+using System.Xml.Schema;
 
 namespace Provisioning.CLI.Console
 {
@@ -31,13 +34,13 @@ namespace Provisioning.CLI.Console
         /// Main methof
         /// </summary>
         /// <param name="args">The command line arguments</param>
-        /// <example>Extract template: -action Extracttemplate -Url https://brk365tests.sharepoint.com/sites/nav -LoginMethod SPO -User=brk365tests@brk365tests.onmicrosoft.com -OUTFILE "C:\Users\brk\Desktop\template.xml" -password Enjoy123.</example>
-        /// <example>Extract template for an entire structure: -action Extracttemplate -EntireStructure -Url https://brk365tests.sharepoint.com/sites/nav -LoginMethod SPO -User=brk365tests@brk365tests.onmicrosoft.com -OUTFILE "C:\Users\brk\Desktop\Structure" -password Enjoy123.</example>
+        /// <example>Extract template: -action Extracttemplate -Url https://konidev.sharepoint.com/sites/nav -LoginMethod SPO -User=admin@konidev.onmicrosoft.com -OUTFILE "C:\Data\@Trivadis\Lösungen\Kacheln\pnp\ExtractSearch\template.xml" -password Enjoy123.</example>
+        /// <example>Extract template for an entire structure: -action Extracttemplate -EntireStructure -Url https://konidev.sharepoint.com/sites/nav -LoginMethod SPO -User=admin@konidev.onmicrosoft.com -OUTFILE "C:\Users\brk\Desktop\Structure" -password Enjoy123.</example>
+        /// C:\Data\@Trivadis\Lösungen\Kacheln\pnp\ExtractSearch
         /// 
-        /// 
-        /// <example>Apply template: -action Applytemplate -Url https://konidev.sharepoint.com/sites/nav -LoginMethod SPO -User=admin@konidev.onmicrosoft.com -INFILE "C:\Data\@Trivadis\Lösungen\Kacheln\srcSP\template.xml" -password Enjoy123.</example>
-        /// <example>Apply mutiple templates with absolute paths in file: -action Applytemplate -LoginMethod SPO -User=brk365tests@brk365tests.onmicrosoft.com -INFILE "C:\Users\brk\Desktop\sitesAbsPath.xml" -password Enjoy123.</example>
-        /// <example>Apply mutiple templates with relative paths in file: -action Applytemplate -LoginMethod SPO -User=brk365tests@brk365tests.onmicrosoft.com -INFILE "C:\Users\brk\Desktop\sitesRelPath.xml" -Url https://brk365tests.sharepoint.com/sites/nav -password Enjoy123.</example>
+        /// <example>Apply template: -action Applytemplate -Url https://konidev.sharepoint.com/sites/nav1 -LoginMethod SPO -User=admin@konidev.onmicrosoft.com -INFILE "C:\Data\@Trivadis\Lösungen\Kacheln\srcSP\template.xml" -password Enjoy123.</example>
+        /// <example>Apply mutiple templates with absolute paths in file: -action Applytemplate -LoginMethod SPO -User=admin@konidev.onmicrosoft.com -INFILE "C:\Users\brk\Desktop\sitesAbsPath.xml" -password Enjoy123.</example>
+        /// <example>Apply mutiple templates with relative paths in file: -action Applytemplate -LoginMethod SPO -User=admin@konidev.onmicrosoft.com -INFILE "C:\Users\brk\Desktop\sitesRelPath.xml" -Url https://konidev.sharepoint.com/sites/nav -password Enjoy123.</example>
         /// <returns>0 in case of success or the error number</returns>
         static int Main(string[] args)
         {
@@ -130,19 +133,18 @@ namespace Provisioning.CLI.Console
                         //Check input file type
                         XmlTextReader reader = new XmlTextReader(inFile.FullName);
                         string mode = null;
-                        while (reader.Read())
-                        {
-                            switch (reader.NodeType)
-                            {
-                                case XmlNodeType.Element:
-                                    mode = reader.LocalName;
-                                    break;
-                            }
-                            if (mode != null) break;
-                        }
-                        reader.Close();
+
+                        XmlDocument doc = new XmlDocument();
+                        doc.Load(inFile.FullName);
+                        mode = doc.DocumentElement.LocalName;
+
                         if (mode == "Provisioning")
                         {
+                            //prepare namespace
+                            XmlNamespaceManager xmlnsManager = new XmlNamespaceManager(doc.NameTable);
+                            xmlnsManager.AddNamespace("pnp", "http://schemas.dev.office.com/PnP/2015/12/ProvisioningSchema");
+
+
                             //A provisioning template has been given
                             System.Console.Out.WriteLine("From file: " + inFile.FullName);
                             if (!parser.ClParameters.ContainsKey(Params.Url))
@@ -150,14 +152,23 @@ namespace Provisioning.CLI.Console
                                 System.Console.Error.WriteLine("Parameter url is required if you like to apply a template xml!");
                                 return 3;
                             }
+
+                            //Check if it is a sequence
                             string tourl = (string)parser.ClParameters[Params.Url];
-                            ApplyTemplate(parser, inFile, tourl);
+                            XmlNode seq = doc.DocumentElement.SelectSingleNode("//pnp:Sequence", xmlnsManager);
+                            if (seq != null)
+                            {
+                                FileInfo tmplFile = new FileInfo(inFile.FullName);
+                                ApplyTemplateSequence(parser, doc.DocumentElement, tmplFile.Directory, xmlnsManager, tourl);
+                            }
+                            else
+                            {
+                                ApplyTemplate(parser, inFile, tourl);
+                            }
                         }
                         else
                         {
                             //We have to do multiple sites
-                            XmlDocument doc = new XmlDocument();
-                            doc.Load(inFile.FullName);
                             foreach (XmlNode site in doc.DocumentElement.ChildNodes)
                             {
                                 string fileName = site.Attributes["file"].Value;
@@ -285,6 +296,263 @@ namespace Provisioning.CLI.Console
         /// <param name="parser">The command line parser</param>
         /// <param name="inFile">The template file to be uploaded</param>
         /// <param name="tourl">The web where the template has to be uploaded</param>
+        private static void ApplyTemplateSequence(Parser parser, XmlElement rootNode, DirectoryInfo resourceDir, XmlNamespaceManager xmlnsManager, string tourl)
+        {
+            Uri touri = new Uri(tourl);
+            System.Console.Out.WriteLine("To url: " + touri.ToString());
+            using (ClientContext context = new ClientContext(touri))
+            {
+
+                //Login to web
+                LoginToWeb(parser, context);
+
+                //Reading sequence
+                foreach (XmlNode seqNode in rootNode.SelectNodes("pnp:Sequence", xmlnsManager))
+                {
+                    //Preparing site collection
+                    string seqID = seqNode.Attributes["ID"].Value;
+                    System.Console.Out.WriteLine("Importing sequence: " + seqID);
+                    XmlNode colNode = seqNode.SelectSingleNode("pnp:SiteCollection", xmlnsManager);
+                    if (colNode == null)
+                    {
+                        System.Console.Error.WriteLine("No SiteCollection found in sequence!");
+                        continue;
+                    }
+
+                    string colLanguage = colNode.Attributes["Language"].Value;
+                    string colPrimarySiteCollectionAdmin = colNode.Attributes["PrimarySiteCollectionAdmin"].Value;
+                    string colSecondarySiteCollectionAdmin = colNode.Attributes["SecondarySiteCollectionAdmin"].Value;
+                    string colTimeZone = colNode.Attributes["TimeZone"].Value;
+                    string colTitle = colNode.Attributes["Title"].Value;
+                    string colUrl = colNode.Attributes["Url"].Value;
+                    string colMembersCanShare = colNode.Attributes["MembersCanShare"].Value;
+                    string colUserCodeMaximumLevel = colNode.Attributes["UserCodeMaximumLevel"].Value;
+                    string colTemplate = colNode.Attributes["Template"].Value;
+
+                    CreateSiteCollection(context, tourl, tourl + colUrl, colTitle, int.Parse(colLanguage), int.Parse(colTimeZone), 
+                        colPrimarySiteCollectionAdmin, colTemplate, int.Parse(colUserCodeMaximumLevel));
+                    UpdateSiteCollection(context, tourl, tourl + colUrl, colTitle, colSecondarySiteCollectionAdmin, colMembersCanShare);
+
+                    //Applying template to site collection
+                    XmlNode colTemplNode = colNode.SelectSingleNode("pnp:Templates/pnp:ProvisioningTemplateReference", xmlnsManager);
+                    string templateID = colTemplNode.Attributes["ID"].Value;
+                    XmlDocument templDoc = new XmlDocument();
+                    CopyTemplate(rootNode, templDoc, templateID, xmlnsManager);
+                    FileInfo inFile = new FileInfo((string)parser.ClParameters[Params.Infile]);
+                    templDoc.Save(inFile + ".tmp");
+                    System.Console.Out.WriteLine("Applying Site Collection template");
+                    ApplyTemplate(parser, new FileInfo(inFile + ".tmp"), tourl + colUrl);
+
+                    //Preparing webs
+                    XmlNode locs = rootNode.SelectSingleNode("pnp:Localizations", xmlnsManager);
+                    Dictionary<CultureInfo, XmlDocument> docs = new Dictionary<CultureInfo, XmlDocument>();
+                    foreach (XmlNode loc in locs.SelectNodes("pnp:Localization", xmlnsManager))
+                    {
+                        string lcid = loc.Attributes["LCID"].Value;
+                        string resourceFile = loc.Attributes["ResourceFile"].Value;
+                        CultureInfo ci = new CultureInfo(int.Parse(lcid));
+                        FileInfo resFile = resourceDir.GetFiles(resourceFile)[0];
+                        XmlDocument doc = new XmlDocument();
+                        doc.Load(resFile.FullName);
+                        docs.Add(ci, doc);
+                    }
+
+                    using (ClientContext siteContext = new ClientContext(tourl + colUrl))
+                    {
+                        siteContext.Credentials = context.Credentials;
+
+                        foreach (XmlNode siteNode in seqNode.SelectNodes("pnp:Site", xmlnsManager))
+                        {
+                            string siteLanguage = siteNode.Attributes["Language"].Value;
+                            string siteTimeZone = siteNode.Attributes["TimeZone"].Value;
+                            string siteTitle = siteNode.Attributes["Title"].Value;
+                            string siteUrl = siteNode.Attributes["Url"].Value;
+                            string siteQuickLaunchEnabled = siteNode.Attributes["QuickLaunchEnabled"].Value;
+                            string siteTemplate = siteNode.Attributes["Template"].Value;
+
+                            CreateSite(siteContext, tourl + colUrl + "/" + siteUrl, siteUrl, siteTitle, int.Parse(siteLanguage), int.Parse(siteTimeZone), siteTemplate);
+                            UpdateSite(siteContext, colUrl + "/" + siteUrl, docs, siteTitle, siteQuickLaunchEnabled);
+
+                            //Applying template to web
+                            XmlNode siteTemplNode = siteNode.SelectSingleNode("pnp:Templates/pnp:ProvisioningTemplateReference", xmlnsManager);
+                            if (siteTemplNode != null)
+                            {
+                                templateID = colTemplNode.Attributes["ID"].Value;
+                                templDoc = new XmlDocument();
+                                CopyTemplate(rootNode, templDoc, templateID, xmlnsManager);
+                                templDoc.Save(inFile + ".tmp");
+                                System.Console.Out.WriteLine("Applying Web template");
+                                ApplyTemplate(parser, new FileInfo(inFile + ".tmp"), tourl + colUrl + "/" + siteUrl);
+                            }
+                        }
+
+                    }
+                }
+            }
+        }
+
+        private static void CopyTemplate(XmlElement rootNode, XmlDocument templDoc, string templateID, XmlNamespaceManager xmlnsManager)
+        {
+            XmlNode Preferences = rootNode.SelectSingleNode("pnp:Preferences", xmlnsManager);
+            XmlNode Localizations = rootNode.SelectSingleNode("pnp:Localizations", xmlnsManager);
+            XmlNode ProvisioningTemplate = rootNode.SelectSingleNode("//pnp:ProvisioningTemplate[@ID='"+ templateID + "']", xmlnsManager);
+
+            XmlNode newPreferences = templDoc.ImportNode(Preferences, true);
+            XmlNode newLocalizations = templDoc.ImportNode(Localizations, true);
+            XmlNode newProvisioningTemplate = templDoc.ImportNode(ProvisioningTemplate, true);
+
+            XmlDeclaration xmlDeclaration = templDoc.CreateXmlDeclaration("1.0", "ISO-8859-1", null);
+            templDoc.AppendChild(xmlDeclaration);
+            XmlSchema schema = new XmlSchema();
+            schema.Namespaces.Add("pnp", "http://schemas.dev.office.com/PnP/2015/12/ProvisioningSchema");
+            templDoc.Schemas.Add(schema);
+
+            XmlElement rootElement = templDoc.CreateElement("pnp:Provisioning", "http://schemas.dev.office.com/PnP/2015/12/ProvisioningSchema");
+            templDoc.AppendChild(rootElement);
+            rootElement.AppendChild(newPreferences);
+            rootElement.AppendChild(newLocalizations);
+            XmlElement templatesElement = templDoc.CreateElement("pnp:Templates", "http://schemas.dev.office.com/PnP/2015/12/ProvisioningSchema");
+            templatesElement.SetAttribute("ID", "CONTAINER-TEMPLATE");
+            rootElement.AppendChild(templatesElement);
+            templatesElement.AppendChild(newProvisioningTemplate);
+        }
+
+        private static void UpdateSite(ClientContext siteContext, string targetUrl, Dictionary<CultureInfo, XmlDocument> docs, string siteTitle, string siteQuickLaunchEnabled)
+        {
+            System.Console.Out.WriteLine("Updating Web " + targetUrl);
+            Web theWeb = siteContext.Site.OpenWeb(targetUrl);
+            siteContext.ExecuteQuery();
+            string resName = siteTitle.Replace("{resource:", "").TrimEnd("}".ToCharArray());
+            foreach (CultureInfo ci in docs.Keys)
+            {
+                XmlDocument doc = docs[ci];
+                XmlNode data = doc.DocumentElement.SelectSingleNode("//data[@name='"+ resName + "']");
+                if (data != null)
+                    theWeb.TitleResource.SetValueForUICulture(ci.Name, data.InnerText);
+            }
+            if (!string.IsNullOrEmpty(siteQuickLaunchEnabled))
+                theWeb.QuickLaunchEnabled = bool.Parse(siteQuickLaunchEnabled.ToLower());
+            theWeb.Update();
+            siteContext.ExecuteQuery();
+        }
+
+        private static void UpdateSiteCollection(ClientContext context, string rootUrl, string targetUrl, string colTitle, string colSecondarySiteCollectionAdmin, string colMembersCanShare)
+        {
+            System.Console.Out.WriteLine("Updating Site Collection " + targetUrl);
+            using (var ctx = new ClientContext(rootUrl.Replace(".sharepoint.com", "-admin.sharepoint.com")))
+            {
+                ctx.Credentials = context.Credentials;
+                var tenant = new Tenant(ctx);
+                SPOSitePropertiesEnumerable spp = tenant.GetSiteProperties(0, true);
+                ctx.Load(spp);
+                ctx.ExecuteQuery();
+                foreach (SiteProperties sp in spp)
+                {
+                    if (sp.Url == targetUrl)
+                    {
+                        sp.Title = colTitle;
+                        if (!string.IsNullOrEmpty(colMembersCanShare) && bool.Parse(colMembersCanShare.ToLower()))
+                            sp.SharingCapability = SharingCapabilities.ExternalUserAndGuestSharing;
+                        if (!string.IsNullOrEmpty(colSecondarySiteCollectionAdmin))
+                            tenant.SetSiteAdmin(targetUrl, colSecondarySiteCollectionAdmin, false);
+                        break;
+                    }
+                }
+                ctx.ExecuteQuery();
+            }
+        }
+
+        /// <summary>
+        /// Create a new site.
+        /// </summary>
+        /// <param name="targetUrl">rootsite + "/" + managedPath + "/" + sitename: e.g. "https://auto.contoso.com/sites/site1/sub1"</param>
+        /// <param name="title">site title: e.g. "Test Site"</param>
+        /// <param name="siteTemplate">The site template used to create this new site</param>
+        private static void CreateSite(ClientContext siteContext, string fullUrl, string targetUrl, string title, 
+            int language, int timeZoneId, String siteTemplate)
+        {
+            targetUrl = targetUrl.TrimStart("/".ToCharArray());
+            if (!siteContext.WebExistsFullUrl(fullUrl))
+            {
+                WebCreationInformation creation = new WebCreationInformation();
+                creation.Url = targetUrl;
+                creation.Title = title;
+                creation.WebTemplate = siteTemplate;
+                creation.Language = language;
+                siteContext.Web.Webs.Add(creation);
+                System.Console.Out.WriteLine("Creating Web " + targetUrl);
+                siteContext.ExecuteQuery();
+            }
+        }
+
+        /// <summary>
+        /// Create a new site.
+        /// </summary>
+        /// <param name="targetUrl">rootsite + "/" + managedPath + "/" + sitename: e.g. "https://auto.contoso.com/sites/site1"</param>
+        /// <param name="title">site title: e.g. "Test Site"</param>
+        /// <param name="owner">site owner: e.g. admin@contoso.com</param>
+        /// <param name="siteTemplate">The site template used to create this new site</param>
+        private static void CreateSiteCollection(ClientContext context, string rootUrl, string targetUrl, 
+            string title, int language, int timeZoneId, string owner, 
+            string siteTemplate, int userCodeMaximumLevel)
+        {
+            using (var ctx = new ClientContext(rootUrl.Replace(".sharepoint.com", "-admin.sharepoint.com")))
+            {
+                ctx.Credentials = context.Credentials;
+                var tenant = new Tenant(ctx);
+                SPOSitePropertiesEnumerable spp = tenant.GetSiteProperties(0, true);
+                ctx.Load(spp);
+                ctx.ExecuteQuery();
+                bool found = false;
+                foreach (SiteProperties sp in spp)
+                {
+                    if (sp.Url == targetUrl)
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (!found)
+                {
+                    System.Console.Out.Write("Creating Site Collection ");
+
+                    //Create new site collection
+                    var newsite = new SiteCreationProperties()
+                    {
+                        Url = targetUrl,
+                        Lcid = (uint)language,
+                        Owner = owner,
+                        Template = siteTemplate,
+                        Title = title,
+                        TimeZoneId = timeZoneId,
+                        UserCodeMaximumLevel = userCodeMaximumLevel
+                    };
+
+                    var spoOperation = tenant.CreateSite(newsite);
+
+                    ctx.Load(spoOperation);
+                    ctx.ExecuteQuery();
+
+                    while (!spoOperation.IsComplete)
+                    {
+                        Thread.Sleep(2000);
+                        ctx.Load(spoOperation);
+                        ctx.ExecuteQuery();
+                        System.Console.Out.Write(".");
+                    }
+
+                    System.Console.Out.WriteLine("");
+                }
+            }
+        }
+        
+        /// <summary>
+        /// Method to apply a template to a web
+        /// </summary>
+        /// <param name="parser">The command line parser</param>
+        /// <param name="inFile">The template file to be uploaded</param>
+        /// <param name="tourl">The web where the template has to be uploaded</param>
         private static void ApplyTemplate(Parser parser, FileInfo inFile, string tourl)
         {
             Uri touri = new Uri(tourl);
@@ -301,6 +569,11 @@ namespace Provisioning.CLI.Console
                 {
                     System.Console.WriteLine("  {0:00}/{1:00} - {2}", progress, total, message);
                 };
+                ptai.MessagesDelegate = delegate (string message, ProvisioningMessageType messageType)
+                {
+                    System.Console.WriteLine("      {0}: {1}", messageType.ToString(), message);
+                };
+                ptai.HandlersToProcess = Handlers.All;
 
                 XMLTemplateProvider provider = new XMLFileSystemTemplateProvider(inFile.Directory.FullName, "");
                 ProvisioningTemplate template = provider.GetTemplate(inFile.Name);

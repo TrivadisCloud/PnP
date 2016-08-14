@@ -189,6 +189,10 @@ namespace Provisioning.CLI.Console.ClParser
                         foundError = CheckInFile(foundError);
                         foundError = CheckLoginMethod(foundError);
                         break;
+                    case Actions.Applysequence:
+                        foundError = CheckInFile(foundError);
+                        foundError = CheckLoginMethod(foundError);
+                        break;
                 }
             }
             if (!ClParameters.ContainsKey(Params.Loginmethod))

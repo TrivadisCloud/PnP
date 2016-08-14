@@ -15,7 +15,12 @@ namespace Provisioning.CLI.Console.ClParser
         /// <summary>
         /// Applies a template
         /// </summary>
-        Applytemplate
+        Applytemplate,
+
+        /// <summary>
+        /// Applies a template sequence
+        /// </summary>
+        Applysequence
     }
 
     /// <summary>
@@ -27,7 +32,8 @@ namespace Provisioning.CLI.Console.ClParser
         public static Dictionary<Actions, string> ValueComments = new Dictionary<Actions, string>()
         {
             { Actions.Extracttemplate, "Extracts a template"},
-            { Actions.Applytemplate, "Applies a template"}
+            { Actions.Applytemplate, "Applies a template"},
+            { Actions.Applysequence, "Applies a template sequence"}
         };
     }
 }
