@@ -16,6 +16,7 @@ using System.Collections.Generic;
 using System.Net;
 using Microsoft.Online.SharePoint.TenantManagement;
 using System.Xml.Schema;
+using System.Text;
 
 namespace Provisioning.CLI.Console
 {
@@ -94,9 +95,9 @@ namespace Provisioning.CLI.Console
                         Uri fromuri = new Uri(((string)parser.ClParameters[Params.Url]).TrimEnd("/".ToCharArray()));
                         if (parser.ClOptions.Contains(Options.Entirestructure))
                         {
-                            using (StreamWriter txtw = new StreamWriter(outFile.OpenWrite()))
+                            using (StreamWriter txtw = new StreamWriter(outFile.OpenWrite(), Encoding.UTF8))
                             {
-                                txtw.WriteLine("<?xml version=\"1.0\" encoding=\"utf - 8\"?>");
+                                txtw.WriteLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
                                 txtw.WriteLine("<sites>");
                                 ExtractTemplateStructure(outFile, txtw, fromuri, parser);
                                 txtw.WriteLine("</sites>");
@@ -332,6 +333,8 @@ namespace Provisioning.CLI.Console
                     CreateSiteCollection(context, tourl, tourl + colUrl, colTitle, int.Parse(colLanguage), int.Parse(colTimeZone), 
                         colPrimarySiteCollectionAdmin, colTemplate, int.Parse(colUserCodeMaximumLevel));
                     UpdateSiteCollection(context, tourl, tourl + colUrl, colTitle, colSecondarySiteCollectionAdmin, colMembersCanShare);
+                    System.Console.Out.WriteLine("Waiting one minute to let O365 finishing the site collection provisioning");
+                    Thread.Sleep(60000);
 
                     //Applying template to site collection
                     XmlNode colTemplNode = colNode.SelectSingleNode("pnp:Templates/pnp:ProvisioningTemplateReference", xmlnsManager);
@@ -339,9 +342,27 @@ namespace Provisioning.CLI.Console
                     XmlDocument templDoc = new XmlDocument();
                     CopyTemplate(rootNode, templDoc, templateID, xmlnsManager);
                     FileInfo inFile = new FileInfo((string)parser.ClParameters[Params.Infile]);
-                    templDoc.Save(inFile + ".tmp");
+                    XmlWriterSettings settings = new XmlWriterSettings
+                    {
+                        Encoding = Encoding.UTF8,
+                        ConformanceLevel = ConformanceLevel.Document,
+                        OmitXmlDeclaration = false,
+                        CloseOutput = true,
+                        Indent = true,
+                        IndentChars = "  ",
+                        NewLineHandling = NewLineHandling.Replace
+                    };
+                    using (StreamWriter sw = System.IO.File.CreateText(inFile + ".tmp"))
+                    {
+                        using (XmlWriter writer = XmlWriter.Create(sw, settings))
+                        {
+                            templDoc.WriteContentTo(writer);
+                            writer.Close();
+                        }
+                    }
                     System.Console.Out.WriteLine("Applying Site Collection template");
                     ApplyTemplate(parser, new FileInfo(inFile + ".tmp"), tourl + colUrl);
+                    System.IO.File.Delete(inFile + ".tmp");
 
                     //Preparing webs
                     XmlNode locs = rootNode.SelectSingleNode("pnp:Localizations", xmlnsManager);
@@ -382,7 +403,9 @@ namespace Provisioning.CLI.Console
                                 CopyTemplate(rootNode, templDoc, templateID, xmlnsManager);
                                 templDoc.Save(inFile + ".tmp");
                                 System.Console.Out.WriteLine("Applying Web template");
-                                ApplyTemplate(parser, new FileInfo(inFile + ".tmp"), tourl + colUrl + "/" + siteUrl);
+                                FileInfo tmpFile = new FileInfo(inFile + ".tmp");
+                                ApplyTemplate(parser, tmpFile, tourl + colUrl + "/" + siteUrl);
+                                tmpFile.Delete();
                             }
                         }
 
@@ -401,7 +424,7 @@ namespace Provisioning.CLI.Console
             XmlNode newLocalizations = templDoc.ImportNode(Localizations, true);
             XmlNode newProvisioningTemplate = templDoc.ImportNode(ProvisioningTemplate, true);
 
-            XmlDeclaration xmlDeclaration = templDoc.CreateXmlDeclaration("1.0", "ISO-8859-1", null);
+            XmlDeclaration xmlDeclaration = templDoc.CreateXmlDeclaration("1.0", "UTF-8", null);
             templDoc.AppendChild(xmlDeclaration);
             XmlSchema schema = new XmlSchema();
             schema.Namespaces.Add("pnp", "http://schemas.dev.office.com/PnP/2015/12/ProvisioningSchema");
@@ -596,6 +619,7 @@ namespace Provisioning.CLI.Console
         /// <param name="context">The actual CSOM context</param>
         private static void LoginToWeb(Parser parser, ClientContext context)
         {
+            System.Console.Out.WriteLine("User: " + (string)parser.ClParameters[Params.User]);
             switch ((LoginMethod)parser.ClParameters[Params.Loginmethod])
             {
                 case LoginMethod.Spo:
