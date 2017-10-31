@@ -333,8 +333,6 @@ namespace Provisioning.CLI.Console
                     CreateSiteCollection(context, tourl, tourl + colUrl, colTitle, int.Parse(colLanguage), int.Parse(colTimeZone), 
                         colPrimarySiteCollectionAdmin, colTemplate, int.Parse(colUserCodeMaximumLevel));
                     UpdateSiteCollection(context, tourl, tourl + colUrl, colTitle, colSecondarySiteCollectionAdmin, colMembersCanShare);
-                    System.Console.Out.WriteLine("Waiting one minute to let O365 finishing the site collection provisioning");
-                    Thread.Sleep(60000);
 
                     //Applying template to site collection
                     XmlNode colTemplNode = colNode.SelectSingleNode("pnp:Templates/pnp:ProvisioningTemplateReference", xmlnsManager);
@@ -566,6 +564,8 @@ namespace Provisioning.CLI.Console
                     }
 
                     System.Console.Out.WriteLine("");
+                    System.Console.Out.WriteLine("Waiting one minute to let O365 finishing the site collection provisioning");
+                    Thread.Sleep(60000);
                 }
             }
         }
@@ -684,27 +684,36 @@ namespace Provisioning.CLI.Console
         /// <param name="context">The actual CSOM context</param>
         private static void SetUserLanguageToWebLanguage(ClientContext context)
         {
-            Microsoft.SharePoint.Client.User user = context.Web.CurrentUser;
-            context.Load(user);
-            context.Load(context.Site.RootWeb);
-            context.Load(context.Web.RegionalSettings);
-            context.Load(context.Web.RegionalSettings.TimeZone, tz => tz.Id);
-            context.ExecuteQuery();
-            PeopleManager peopleManager = new PeopleManager(context);
-            int lcid = (int)context.Site.RootWeb.Language;
-            CultureInfo siteCulture = CultureInfo.GetCultureInfo(lcid);
-            Thread.CurrentThread.CurrentCulture = siteCulture;
-            Thread.CurrentThread.CurrentUICulture = siteCulture;
-            var muiLanguages = siteCulture.Name;
-            System.Console.Out.WriteLine("Using language: " + muiLanguages);
-            var customRegionalSettings = "False";
-            var locale = "" + lcid;
-            var timeZoneID = "" + context.Web.RegionalSettings.TimeZone.Id;
-            peopleManager.SetSingleValueProfileProperty(user.LoginName, "SPS-MUILanguages", muiLanguages);
-            peopleManager.SetSingleValueProfileProperty(user.LoginName, "SPS-RegionalSettings-FollowWeb", customRegionalSettings);
-            peopleManager.SetSingleValueProfileProperty(user.LoginName, "SPS-Locale", locale);
-            peopleManager.SetSingleValueProfileProperty(user.LoginName, "SPS-TimeZone", timeZoneID);
-            context.ExecuteQuery();
+            try
+            {
+                Microsoft.SharePoint.Client.User user = context.Web.CurrentUser;
+                context.Load(user);
+                context.Load(context.Site.RootWeb);
+                context.Load(context.Web.RegionalSettings);
+                context.Load(context.Web.RegionalSettings.TimeZone, tz => tz.Id);
+                context.ExecuteQuery();
+                PeopleManager peopleManager = new PeopleManager(context);
+                int lcid = (int)context.Site.RootWeb.Language;
+                CultureInfo siteCulture = CultureInfo.GetCultureInfo(lcid);
+                Thread.CurrentThread.CurrentCulture = siteCulture;
+                Thread.CurrentThread.CurrentUICulture = siteCulture;
+                var muiLanguages = siteCulture.Name;
+                System.Console.Out.WriteLine("Using language: " + muiLanguages);
+                var customRegionalSettings = "False";
+                var locale = "" + lcid;
+                var timeZoneID = "" + context.Web.RegionalSettings.TimeZone.Id;
+                peopleManager.SetSingleValueProfileProperty(user.LoginName, "SPS-MUILanguages", muiLanguages);
+                peopleManager.SetSingleValueProfileProperty(user.LoginName, "SPS-RegionalSettings-FollowWeb", customRegionalSettings);
+                peopleManager.SetSingleValueProfileProperty(user.LoginName, "SPS-Locale", locale);
+                peopleManager.SetSingleValueProfileProperty(user.LoginName, "SPS-TimeZone", timeZoneID);
+                context.ExecuteQuery();
+
+            }
+            catch (Exception ex)
+            {
+                System.Console.Error.WriteLine("Error setting user language!");
+                System.Console.Error.WriteLine(ex.ToString());
+            }
         }
 
         /// <summary>
