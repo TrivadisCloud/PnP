@@ -23,7 +23,8 @@ namespace Provisioning.CLI.Console.ClParser
         public static string Comment = "The supported login methods";
         public static Dictionary<LoginMethod, string> ValueComments = new Dictionary<LoginMethod, string>()
         {
-            { LoginMethod.Spo, "SharePoint Online login"}
+            { LoginMethod.Spo, "SharePoint Online login"},
+            { LoginMethod.Onprem, "SharePoint on-premises login"}
         };
     }
 }
