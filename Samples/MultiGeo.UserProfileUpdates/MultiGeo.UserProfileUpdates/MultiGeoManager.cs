@@ -47,6 +47,11 @@ namespace GeoUserDiscovery
             this.appPassword = appPassword;
             this.appId = appId;
             this.aadDomain = aadDomain;
+
+            // Telemetry, we would like to understand how popular this sample is so we can target future investment. Obviously you're free to drop this section from the code 
+            clientContextForDefaultGeo.ClientTag = "SPDev:MultiGeo";
+            clientContextForDefaultGeo.Load(clientContextForDefaultGeo.Web, p => p.Description, p => p.Id);
+            clientContextForDefaultGeo.ExecuteQuery();
         }
 
         /// <summary>
@@ -59,10 +64,10 @@ namespace GeoUserDiscovery
             string result = null;
 
             PeopleManager peopleManager = new PeopleManager(this.clientContext);
-            var userProperties = peopleManager.GetPropertiesFor(userPrincipalName);
+            var userProperties = peopleManager.GetPropertiesFor($"i:0#.f|membership|{userPrincipalName}");
+            this.clientContext.Load(userProperties);
             this.clientContext.ExecuteQuery();
-            // TODO: replace with PersonalSiteHostUrl once this property appears in the CSOM nuget redist
-            result = userProperties.PersonalUrl;
+            result = userProperties.PersonalSiteHostUrl;
 
             return result;
         }
